@@ -1,46 +1,51 @@
-// package elfie takes an 'ELF-selfie' of the current process
 package elfie
 
 import (
 	"bytes"
 	"debug/elf"
-	"os"
+	"debug/gosym"
 	"reflect"
 	"unsafe"
-
-	"bou.ke/procmaps"
 )
 
-func rawMemoryAccess(p uintptr, length int) []byte {
-	return *(*[]byte)(unsafe.Pointer(&reflect.SliceHeader{
-		Data: p,
-		Len:  length,
-		Cap:  length,
-	}))
+var dma = *(*[]byte)(unsafe.Pointer(&reflect.SliceHeader{
+	Data: 0x0,
+	Len:  0x7FFFFFFFF,
+	Cap:  0x7FFFFFFFF,
+}))
+
+// Elfie parses the ELF file for the current process from memory
+func Elfie() (*elf.File, error) {
+	r := bytes.NewReader(dma[0x400000:])
+	return elf.NewFile(r)
 }
 
-func Elfie() (*elf.File, error) {
-	mapping, err := procmaps.ReadSelf()
-	if err != nil {
-		return nil, err
-	}
-	exec, err := os.Executable()
+func table() (*gosym.Table, error) {
+	elf, err := Elfie()
 	if err != nil {
 		return nil, err
 	}
 
-	start := uintptr(0)
-	end := uintptr(0)
-	for _, m := range mapping {
-		if m.Path != exec {
-			break
-		}
-		if start == 0 {
-			start = m.Start
-		}
-		end = m.End
+	var (
+		textStart       uint64
+		symtab, pclntab []byte
+	)
+
+	if sect := elf.Section(".text"); sect != nil {
+		textStart = sect.Addr
 	}
-	mem := rawMemoryAccess(start, int(end-start))
-	r := bytes.NewReader(mem)
-	return elf.NewFile(r)
+
+	if sect := elf.Section(".gosymtab"); sect != nil {
+		if symtab, err = sect.Data(); err != nil {
+			return nil, err
+		}
+	}
+
+	if sect := elf.Section(".gopclntab"); sect != nil {
+		if pclntab, err = sect.Data(); err != nil {
+			return nil, err
+		}
+	}
+
+	return gosym.NewTable(symtab, gosym.NewLineTable(pclntab, textStart))
 }
