@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestElfie(t *testing.T) {
-	_, err := Elfie()
+func TestElf(t *testing.T) {
+	_, err := Elf()
 	require.NoError(t, err)
 }
 
